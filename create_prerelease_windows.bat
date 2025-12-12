@@ -102,11 +102,19 @@ powershell -Command "Compress-Archive -Path '%FOLDER_NAME%' -DestinationPath 'Tw
 echo Package created: Twitch.Drops.Miner.Windows.zip
 echo.
 
+REM Get repository from git remote
+for /f "tokens=*" %%i in ('git config --get remote.origin.url') do set REMOTE_URL=%%i
+REM Extract owner/repo from URL (handles both HTTPS and SSH)
+for /f "tokens=*" %%i in ('powershell -Command "[regex]::Match('%REMOTE_URL%', '(?:github\.com[:/])(.+?)(?:\.git)?$').Groups[1].Value"') do set REPO=%%i
+
+echo Repository: %REPO%
+echo.
+
 REM Delete existing dev-build release if it exists
-gh release view dev-build >nul 2>nul
+gh release view dev-build --repo %REPO% >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
     echo Deleting existing dev-build release...
-    gh release delete dev-build --cleanup-tag --yes
+    gh release delete dev-build --cleanup-tag --yes --repo %REPO%
 )
 
 REM Get current timestamp
@@ -117,7 +125,7 @@ set "NOTES=**This is an automatically generated in-development pre-release versi
 
 REM Create new pre-release
 echo Creating GitHub pre-release...
-gh release create dev-build "Twitch.Drops.Miner.Windows.zip" --prerelease --title "Development build" --notes "!NOTES!"
+gh release create dev-build "Twitch.Drops.Miner.Windows.zip" --repo %REPO% --prerelease --title "Development build" --notes "!NOTES!"
 
 if %ERRORLEVEL% EQU 0 (
     echo.
