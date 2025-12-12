@@ -1212,8 +1212,25 @@ class Twitch:
                     if drop_data is None or drop_data["dropID"] != drop.id:
                         break
                     await asyncio.sleep(2)
+            # Check if we should switch to a different channel after claiming
             if campaign.can_earn(watching_channel):
-                self.restart_watching()
+                # Check if there's a better channel available
+                better_channel_found = False
+                for channel in self.channels.values():
+                    if (
+                        channel != watching_channel
+                        and self.can_watch(channel)
+                        and self.should_switch(channel)
+                    ):
+                        better_channel_found = True
+                        break
+                
+                if better_channel_found:
+                    # Switch to better channel
+                    self.change_state(State.INVENTORY_FETCH)
+                else:
+                    # Stay on current channel
+                    self.restart_watching()
             else:
                 self.change_state(State.INVENTORY_FETCH)
             return
@@ -1229,7 +1246,15 @@ class Twitch:
         logger.log(CALL, f"Drop update from websocket: {drop_text}")
         if drop is not None and drop.can_earn(self.watching_channel.get_with_default(None)):
             # the received payload is for the drop we expected
-            drop.update_minutes(message["data"]["current_progress_min"])
+            current_minutes = message["data"]["current_progress_min"]
+            required_minutes = message["data"]["required_progress_min"]
+            drop.update_minutes(current_minutes)
+            
+            # Check if drop just completed (reached 100%)
+            if current_minutes >= required_minutes:
+                # Drop is complete, refresh inventory to find next drop/channel
+                # This works whether auto-claim is ON or OFF, and with bypass account linking
+                self.change_state(State.INVENTORY_FETCH)
 
     @task_wrapper
     async def process_notifications(self, user_id: int, message: JsonType):
