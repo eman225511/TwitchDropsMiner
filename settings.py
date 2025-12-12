@@ -22,6 +22,10 @@ class SettingsFile(TypedDict):
     tray_notifications: bool
     enable_badges_emotes: bool
     available_drops_check: bool
+    bypass_account_linking: bool
+    auto_restart_on_error: bool
+    auto_claim: bool
+    ignore_badge_emote: bool
     priority_mode: PriorityMode
 
 
@@ -36,6 +40,10 @@ default_settings: SettingsFile = {
     "tray_notifications": True,
     "enable_badges_emotes": False,
     "available_drops_check": False,
+    "bypass_account_linking": False,
+    "auto_restart_on_error": False,
+    "auto_claim": True,
+    "ignore_badge_emote": False,
     "priority_mode": PriorityMode.PRIORITY_ONLY,
 }
 
@@ -60,6 +68,10 @@ class Settings:
     tray_notifications: bool
     enable_badges_emotes: bool
     available_drops_check: bool
+    bypass_account_linking: bool
+    auto_restart_on_error: bool
+    auto_claim: bool
+    ignore_badge_emote: bool
     priority_mode: PriorityMode
 
     PASSTHROUGH = ("_settings", "_args", "_altered")

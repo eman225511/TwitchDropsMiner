@@ -104,6 +104,13 @@ class BaseDrop:
         campaign = self.campaign
         return all(campaign.timed_drops[pid].is_claimed for pid in self.precondition_drops)
 
+    @property
+    def is_badge_or_emote_only(self) -> bool:
+        """Check if this drop only contains badges or emotes"""
+        return bool(self.benefits) and all(
+            benefit.type.is_badge_or_emote() for benefit in self.benefits
+        )
+
     def _on_state_changed(self) -> None:
         raise NotImplementedError
 
@@ -114,6 +121,8 @@ class BaseDrop:
             and not self.is_claimed  # isn't already claimed
             # has at least one benefit, or participates in a preconditions chain
             and (bool(self.benefits) or self.id in self.campaign.preconditions_chain())
+            # ignore badge/emote only drops if setting is enabled
+            and not (self._twitch.settings.ignore_badge_emote and self.is_badge_or_emote_only)
         )
 
     def _base_can_earn(self) -> bool:
@@ -395,6 +404,10 @@ class DropsCampaign:
 
     @property
     def eligible(self) -> bool:
+        # Check if account linking bypass is enabled
+        if self._twitch.settings.bypass_account_linking:
+            return True
+        # Original behavior: linked or has badge/emote with setting enabled
         return self.linked or (
             self._twitch.settings.enable_badges_emotes and self.has_badge_or_emote
         )

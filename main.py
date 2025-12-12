@@ -7,14 +7,18 @@ from multiprocessing import freeze_support
 if __name__ == "__main__":
     freeze_support()
     import io
+    import os
     import sys
     import signal
     import asyncio
     import logging
     import argparse
     import warnings
+    import tempfile
     import traceback
+    import subprocess
     import tkinter as tk
+    from pathlib import Path
     from tkinter import messagebox
     from typing import NoReturn, TYPE_CHECKING
 
@@ -128,8 +132,122 @@ if __name__ == "__main__":
     # get rid of unneeded objects
     del root, parser
 
+    def find_venv_python() -> str | None:
+        """Find Python executable in common venv locations"""
+        script_dir = SELF_PATH.parent
+        common_venv_names = ['.venv', 'venv', 'env', '.env', 'virtualenv']
+        
+        for venv_name in common_venv_names:
+            venv_path = script_dir / venv_name
+            if venv_path.exists() and venv_path.is_dir():
+                # Check for Python executable
+                if sys.platform == "win32":
+                    python_exe = venv_path / "Scripts" / "python.exe"
+                else:
+                    python_exe = venv_path / "bin" / "python"
+                
+                if python_exe.exists():
+                    return str(python_exe)
+        
+        return None
+
+    def create_restart_script() -> Path:
+        """Create a temporary script to restart the application"""
+        # Determine if we're running as exe or python script
+        if getattr(sys, 'frozen', False):
+            # Running as compiled exe
+            app_path = sys.executable
+            is_exe = True
+            python_exe = None
+        else:
+            # Running as Python script
+            app_path = SELF_PATH
+            is_exe = False
+            # Try to find venv Python, fall back to current Python
+            python_exe = find_venv_python() or sys.executable
+        
+        # Get the original command line arguments
+        args = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in sys.argv[1:])
+        
+        if sys.platform == "win32":
+            # Create a temporary batch file for Windows
+            script_content = f"""@echo off
+timeout /t 2 /nobreak >nul
+"""
+            if is_exe:
+                script_content += f'start "" "{app_path}" {args}\n'
+            else:
+                script_content += f'start "" "{python_exe}" "{app_path}" {args}\n'
+            
+            script_content += "del /f /q \"%~f0\"\n"
+            
+            fd, script_path = tempfile.mkstemp(suffix='.bat', text=True)
+            with os.fdopen(fd, 'w') as f:
+                f.write(script_content)
+        else:
+            # Create a temporary shell script for Linux/Mac
+            script_content = f"""#!/bin/bash
+sleep 2
+"""
+            if is_exe:
+                script_content += f'"{app_path}" {args} &\n'
+            else:
+                script_content += f'"{python_exe}" "{app_path}" {args} &\n'
+            
+            script_content += f'rm -f "$0"\n'
+            
+            fd, script_path = tempfile.mkstemp(suffix='.sh', text=True)
+            with os.fdopen(fd, 'w') as f:
+                f.write(script_content)
+            os.chmod(script_path, 0o755)
+        
+        return Path(script_path)
+
+    def trigger_full_restart():
+        """Trigger a full application restart by launching a restart script"""
+        try:
+            script_path = create_restart_script()
+            
+            if sys.platform == "win32":
+                # Launch the batch file detached on Windows
+                # Use STARTUPINFO to hide the window
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = subprocess.SW_HIDE
+                
+                proc = subprocess.Popen(
+                    [str(script_path)],
+                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                    close_fds=True,
+                    startupinfo=startupinfo,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            else:
+                # Launch the shell script detached on Linux/Mac
+                proc = subprocess.Popen(
+                    [str(script_path)],
+                    start_new_session=True,
+                    close_fds=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            
+            # Don't wait for the process - it's meant to outlive this one
+            # This prevents the ResourceWarning
+            proc._handle = None  # type: ignore
+            
+            return True
+        except Exception as e:
+            print(f"Failed to create restart script: {e}")
+            return False
+
     # client run
     async def main():
+        import aiohttp
+        
         # set language
         try:
             _.set_language(settings.language)
@@ -151,44 +269,72 @@ if __name__ == "__main__":
         logging.getLogger("TwitchDrops.gql").setLevel(settings.debug_gql)
         logging.getLogger("TwitchDrops.websocket").setLevel(settings.debug_ws)
 
-        exit_status = 0
-        client = Twitch(settings)
-        loop = asyncio.get_running_loop()
-        if sys.platform == "linux":
-            loop.add_signal_handler(signal.SIGINT, lambda *_: client.gui.close())
-            loop.add_signal_handler(signal.SIGTERM, lambda *_: client.gui.close())
-        try:
-            await client.run()
-        except CaptchaRequired:
-            exit_status = 1
-            client.prevent_close()
-            client.print(_("error", "captcha"))
-        except Exception:
-            exit_status = 1
-            client.prevent_close()
-            client.print("Fatal error encountered:\n")
-            client.print(traceback.format_exc())
-        finally:
+        max_restart_attempts = 0  # 0 means infinite
+        restart_count = 0
+        
+        while True:
+            exit_status = 0
+            client = Twitch(settings)
+            loop = asyncio.get_running_loop()
             if sys.platform == "linux":
-                loop.remove_signal_handler(signal.SIGINT)
-                loop.remove_signal_handler(signal.SIGTERM)
-            client.print(_("gui", "status", "exiting"))
-            await client.shutdown()
-        if not client.gui.close_requested:
-            # user didn't request the closure
-            client.gui.tray.change_icon("error")
-            client.print(_("status", "terminated"))
-            client.gui.status.update(_("gui", "status", "terminated"))
-            # notify the user about the closure
-            client.gui.grab_attention(sound=True)
-        await client.gui.wait_until_closed()
-        # save the application state
-        # NOTE: we have to do it after wait_until_closed,
-        # because the user can alter some settings between app termination and closing the window
-        client.save(force=True)
-        client.gui.stop()
-        client.gui.close_window()
-        sys.exit(exit_status)
+                loop.add_signal_handler(signal.SIGINT, lambda *_: client.gui.close())
+                loop.add_signal_handler(signal.SIGTERM, lambda *_: client.gui.close())
+            try:
+                await client.run()
+            except CaptchaRequired:
+                exit_status = 1
+                client.prevent_close()
+                client.print(_("error", "captcha"))
+            except (aiohttp.ClientConnectionError, asyncio.TimeoutError, aiohttp.ClientPayloadError) as e:
+                exit_status = 1
+                if settings.auto_restart_on_error and not client.gui.close_requested:
+                    restart_count += 1
+                    client.print(f"Connection error encountered: {type(e).__name__}\n")
+                    if max_restart_attempts > 0 and restart_count >= max_restart_attempts:
+                        client.prevent_close()
+                        client.print(f"Maximum restart attempts ({max_restart_attempts}) reached. Stopping.\n")
+                    else:
+                        client.print(f"Auto-restart enabled. Triggering full application restart... (Attempt {restart_count})\n")
+                        # Save state before restart
+                        client.save(force=True)
+                        # Trigger full restart
+                        if trigger_full_restart():
+                            # Exit this instance so the new one can start
+                            break
+                        else:
+                            client.print("Failed to trigger restart. Application will terminate.\n")
+                            client.prevent_close()
+                else:
+                    client.prevent_close()
+                    client.print(f"Connection error encountered:\n{traceback.format_exc()}")
+            except Exception:
+                exit_status = 1
+                client.prevent_close()
+                client.print("Fatal error encountered:\n")
+                client.print(traceback.format_exc())
+            finally:
+                if sys.platform == "linux":
+                    loop.remove_signal_handler(signal.SIGINT)
+                    loop.remove_signal_handler(signal.SIGTERM)
+                client.print(_("gui", "status", "exiting"))
+                await client.shutdown()
+            
+            # Normal shutdown procedure
+            if not client.gui.close_requested:
+                # user didn't request the closure
+                client.gui.tray.change_icon("error")
+                client.print(_("status", "terminated"))
+                client.gui.status.update(_("gui", "status", "terminated"))
+                # notify the user about the closure
+                client.gui.grab_attention(sound=True)
+            await client.gui.wait_until_closed()
+            # save the application state
+            # NOTE: we have to do it after wait_until_closed,
+            # because the user can alter some settings between app termination and closing the window
+            client.save(force=True)
+            client.gui.stop()
+            client.gui.close_window()
+            sys.exit(exit_status)
 
     try:
         # use lock_file to check if we're not already running

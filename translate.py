@@ -162,6 +162,7 @@ class GUISettingsGeneral(TypedDict):
     tray: str
     tray_notifications: str
     dark_mode: str
+    auto_claim: str
     priority_mode: str
     proxy: str
 
@@ -172,6 +173,9 @@ class GUISettingsAdvanced(TypedDict):
     warning_text: str
     enable_badges_emotes: str
     available_drops_check: str
+    bypass_account_linking: str
+    auto_restart_on_error: str
+    ignore_badge_emote: str
 
 
 class GUIPriorityModes(TypedDict):
@@ -304,6 +308,7 @@ default_translation: Translation = {
             "password": "Password",
             "twofa_code": "2FA code (optional)",
             "button": "Login",
+            "logout_button": "Logout",
         },
         "websocket": {
             "name": "Websocket Status",
@@ -372,6 +377,7 @@ default_translation: Translation = {
                 "tray": "Autostart into tray: ",
                 "tray_notifications": "Tray notifications: ",
                 "dark_mode": "Dark mode: ",
+                "auto_claim": "Auto-claim drops: ",
                 "priority_mode": "Priority mode: ",
                 "proxy": "Proxy (requires restart):",
             },
@@ -385,6 +391,9 @@ default_translation: Translation = {
                 ),
                 "enable_badges_emotes": "Enable partial support for badges and emotes: ",
                 "available_drops_check": "Enable extra available drops check: ",
+                "bypass_account_linking": "Bypass account linking requirement: ",
+                "auto_restart_on_error": "Auto-restart on connection errors: ",
+                "ignore_badge_emote": "Ignore badge and emote only drops: ",
             },
             "priority_modes": {
                 "priority_only": "Priority list only",

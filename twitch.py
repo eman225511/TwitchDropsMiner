@@ -449,6 +449,8 @@ class Twitch:
         self.websocket = WebsocketPool(self)
         # Maintenance task
         self._mnt_task: asyncio.Task[None] | None = None
+        # Auto-restart flag for connection errors
+        self._pending_restart_exception: Exception | None = None
 
     async def get_session(self) -> aiohttp.ClientSession:
         if (session := self._session) is not None:
@@ -558,6 +560,25 @@ class Twitch:
         self.gui.save(force=force)
         self.settings.save(force=force)
 
+    def logout(self) -> None:
+        """
+        Logs out the user by clearing cookies and authentication state.
+        """
+        # Clear authentication state
+        self._auth_state.invalidate()
+        self._auth_state.user_id = 0
+        
+        # Clear cookies
+        if self._session is not None:
+            cookie_jar = self._session.cookie_jar
+            if isinstance(cookie_jar, aiohttp.CookieJar):
+                cookie_jar.clear()
+        
+        # Delete cookies file
+        COOKIES_PATH.unlink(missing_ok=True)
+        
+        self.print("Successfully logged out. Cookies and authentication cleared.")
+
     def get_priority(self, channel: Channel) -> int:
         """
         Return a priority number for a given channel.
@@ -587,6 +608,11 @@ class Twitch:
         while True:
             try:
                 await self._run()
+                # Check if we exited due to connection restart request
+                if self._pending_restart_exception is not None:
+                    exc = self._pending_restart_exception
+                    self._pending_restart_exception = None
+                    raise exc
                 break
             except ReloadRequest:
                 await self.shutdown()
@@ -642,11 +668,12 @@ class Twitch:
                 self.change_state(State.GAMES_UPDATE)
             elif self._state is State.GAMES_UPDATE:
                 # claim drops from expired and active campaigns
-                for campaign in self.inventory:
-                    if not campaign.upcoming:
-                        for drop in campaign.drops:
-                            if drop.can_claim:
-                                await drop.claim()
+                if self.settings.auto_claim:
+                    for campaign in self.inventory:
+                        if not campaign.upcoming:
+                            for drop in campaign.drops:
+                                if drop.can_claim:
+                                    await drop.claim()
                 # figure out which games we want
                 self.wanted_games.clear()
                 exclude = self.settings.exclude
@@ -1164,7 +1191,9 @@ class Twitch:
                 return
             drop.update_claim(message["data"]["drop_instance_id"])
             campaign = drop.campaign
-            await drop.claim()
+            # claim it if auto-claim is enabled
+            if self.settings.auto_claim:
+                await drop.claim()
             drop.display()
             # About 4-20s after claiming the drop, next drop can be started
             # by re-sending the watch payload. We can test for it by fetching the current drop
@@ -1256,11 +1285,16 @@ class Twitch:
                 raise
             except (
                 aiohttp.ClientConnectionError, asyncio.TimeoutError, aiohttp.ClientPayloadError
-            ):
+            ) as exc:
                 # connection problems, retry
                 if backoff.steps > 1:
                     # just so that quick retries that sometimes happen, aren't shown
                     self.print(_("error", "no_connection").format(seconds=round(delay)))
+                # Check if auto-restart is enabled and we've tried too many times
+                if self.settings.auto_restart_on_error and backoff.steps >= 5:
+                    # After 5 failed attempts (roughly 60+ seconds of retrying), trigger restart
+                    self.print("Too many connection failures. Triggering auto-restart...")
+                    raise exc
             finally:
                 if response is not None:
                     response.release()

@@ -12,10 +12,10 @@ if ! command -v git &> /dev/null; then
 fi
 
 # Check if the virtual environment exists
-if [ ! -d "$dirpath/env" ]; then
+if [ ! -d "$dirpath/.venv" ]; then
     echo
-    echo "Creating the env folder..."
-    python3 -m venv "$dirpath/env"
+    echo "Creating the .venv folder..."
+    python3 -m venv "$dirpath/.venv"
     if [ $? -ne 0 ]; then
         echo
         echo "No python executable found in PATH or failed to create virtual environment!"
@@ -28,9 +28,9 @@ fi
 # Activate the virtual environment and install requirements
 echo
 echo "Installing requirements.txt..."
-"$dirpath/env/bin/python" -m pip install -U pip
-"$dirpath/env/bin/pip" install wheel
-"$dirpath/env/bin/pip" install -r "$dirpath/requirements.txt"
+"$dirpath/.venv/bin/python" -m pip install -U pip
+"$dirpath/.venv/bin/pip" install wheel
+"$dirpath/.venv/bin/pip" install -r "$dirpath/requirements.txt"
 if [ $? -ne 0 ]; then
     echo
     echo "Failed to install requirements."

@@ -132,20 +132,37 @@ def task_wrapper(
                 await afunc(*args, **kwargs)
             except (ExitRequest, ReloadRequest):
                 pass
-            except Exception:
+            except Exception as exc:
                 logger.exception(f"Exception in {afunc.__name__} task")
+                # Check if this is a connection error with auto-restart enabled
+                import aiohttp
+                from twitch import Twitch  # cyclic import
+                probe = args and args[0] or None  # extract from 'self' arg
+                if isinstance(probe, Twitch):
+                    twitch_instance = probe
+                elif probe is not None:
+                    twitch_instance = getattr(probe, "_twitch", None)  # extract from '_twitch' attr
+                else:
+                    twitch_instance = None
+                
+                # If auto-restart is enabled and this is a connection error, trigger restart
+                if (
+                    twitch_instance
+                    and isinstance(twitch_instance, Twitch)
+                    and twitch_instance.settings.auto_restart_on_error
+                    and isinstance(exc, (aiohttp.ClientConnectionError, aiohttp.ClientConnectorError))
+                ):
+                    twitch_instance.print("Connection error in background task. Triggering auto-restart...")
+                    # Store the exception to re-raise in main loop
+                    twitch_instance._pending_restart_exception = exc
+                    # Close the app to trigger exit
+                    twitch_instance.close()
+                    return  # Don't raise, just return to end the task gracefully
+                
                 if critical:
                     # critical task's death should trigger a termination.
-                    # there isn't an easy and sure way to obtain the Twitch instance here,
-                    # but we can improvise finding it
-                    from twitch import Twitch  # cyclic import
-                    probe = args and args[0] or None  # extract from 'self' arg
-                    if isinstance(probe, Twitch):
-                        probe.close()
-                    elif probe is not None:
-                        probe = getattr(probe, "_twitch", None)  # extract from '_twitch' attr
-                        if isinstance(probe, Twitch):
-                            probe.close()
+                    if isinstance(twitch_instance, Twitch):
+                        twitch_instance.close()
                 raise  # raise up to the wrapping task
         return wrapper
     if afunc is None:

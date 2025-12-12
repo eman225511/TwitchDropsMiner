@@ -15,10 +15,10 @@ if %errorlevel% NEQ 0 (
 )
 
 REM Create the virtual environment if it doesn't exist
-if not exist "%dirpath%\env" (
+if not exist "%dirpath%\.venv" (
     echo:
-    echo Creating the env folder...
-    python -m venv "%dirpath%\env"
+    echo Creating the .venv folder...
+    python -m venv "%dirpath%\.venv"
     if %errorlevel% NEQ 0 (
         echo:
         echo No python executable found in PATH or failed to create virtual environment!
@@ -31,9 +31,9 @@ if not exist "%dirpath%\env" (
 REM Activate the virtual environment and install requirements
 echo:
 echo Installing requirements.txt...
-"%dirpath%\env\scripts\python" -m pip install -U pip
-"%dirpath%\env\scripts\pip" install wheel
-"%dirpath%\env\scripts\pip" install -r "%dirpath%\requirements.txt"
+"%dirpath%\.venv\scripts\python" -m pip install -U pip
+"%dirpath%\.venv\scripts\pip" install wheel
+"%dirpath%\.venv\scripts\pip" install -r "%dirpath%\requirements.txt"
 if %errorlevel% NEQ 0 (
     echo:
     echo Failed to install requirements.

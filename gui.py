@@ -541,7 +541,14 @@ class LoginForm:
         self._button = ttk.Button(
             frame, text=_("gui", "login", "button"), command=self._confirm.set, state="disabled"
         )
-        self._button.grid(column=0, row=4, columnspan=2)
+        self._button.grid(column=0, row=4, columnspan=2, pady=(0, 4))
+        
+        # Add logout button
+        self._logout_button = ttk.Button(
+            frame, text=_("gui", "login", "logout_button"), command=self._on_logout, state="disabled"
+        )
+        self._logout_button.grid(column=0, row=5, columnspan=2)
+        
         self.update(_("gui", "login", "logged_out"), None)
 
     def clear(self, login: bool = False, password: bool = False, token: bool = False):
@@ -598,11 +605,26 @@ class LoginForm:
         await asyncio.sleep(4)
         webopen(page_url)
 
+    def _on_logout(self):
+        """Handle logout button click"""
+        from exceptions import ReloadRequest
+        # Clear cookies and session
+        self._manager._twitch.logout()
+        # Update UI
+        self.update(_("gui", "login", "logged_out"), None)
+        self._manager.print("Logged out. Restarting application...")
+        # Raise ReloadRequest to trigger auto-restart
+        raise ReloadRequest()
+    
     def update(self, status: str, user_id: int | None):
         if user_id is not None:
             user_str = str(user_id)
+            # Enable logout button when logged in
+            self._logout_button.config(state="normal")
         else:
             user_str = "-"
+            # Disable logout button when not logged in
+            self._logout_button.config(state="disabled")
         self._var.set(f"{status}\n{user_str}")
 
 
@@ -1553,8 +1575,12 @@ class _SettingsVars(TypedDict):
     language: StringVar
     priority_mode: StringVar
     tray_notifications: IntVar
+    auto_claim: IntVar
     enable_badges_emotes: IntVar
     available_drops_check: IntVar
+    bypass_account_linking: IntVar
+    auto_restart_on_error: IntVar
+    ignore_badge_emote: IntVar
 
 
 class SettingsPanel:
@@ -1588,11 +1614,21 @@ class SettingsPanel:
             "dark_mode": IntVar(master, int(self._settings.dark_mode)),
             "priority_mode": StringVar(master, self.PRIORITY_MODES[priority_mode]),
             "tray_notifications": IntVar(master, self._settings.tray_notifications),
+            "auto_claim": IntVar(master, int(self._settings.auto_claim)),
             "enable_badges_emotes": IntVar(
                 master, int(self._settings.enable_badges_emotes)
             ),
             "available_drops_check": IntVar(
                 master, int(self._settings.available_drops_check)
+            ),
+            "bypass_account_linking": IntVar(
+                master, int(self._settings.bypass_account_linking)
+            ),
+            "auto_restart_on_error": IntVar(
+                master, int(self._settings.auto_restart_on_error)
+            ),
+            "ignore_badge_emote": IntVar(
+                master, int(self._settings.ignore_badge_emote)
             ),
         }
         self._game_names: set[str] = set()
@@ -1657,6 +1693,16 @@ class SettingsPanel:
             checkboxes_frame,
             variable=self._vars["dark_mode"],
             command=self.update_dark_mode,
+        ).grid(column=1, row=irow, sticky="w")
+        ttk.Label(
+            checkboxes_frame, text=_("gui", "settings", "general", "auto_claim")
+        ).grid(column=0, row=(irow := irow + 1), sticky="e")
+        ttk.Checkbutton(
+            checkboxes_frame,
+            variable=self._vars["auto_claim"],
+            command=lambda: setattr(
+                self._settings, "auto_claim", bool(self._vars["auto_claim"].get())
+            ),
         ).grid(column=1, row=irow, sticky="w")
         ttk.Label(
             checkboxes_frame, text=_("gui", "settings", "general", "priority_mode")
@@ -1725,6 +1771,42 @@ class SettingsPanel:
                 self._settings,
                 "available_drops_check",
                 bool(self._vars["available_drops_check"].get()),
+            ),
+        ).grid(column=1, row=irow, sticky="w")
+        ttk.Label(
+            advanced_center, text=_("gui", "settings", "advanced", "bypass_account_linking")
+        ).grid(column=0, row=(irow := irow + 1), sticky="e")
+        ttk.Checkbutton(
+            advanced_center,
+            variable=self._vars["bypass_account_linking"],
+            command=lambda: setattr(
+                self._settings,
+                "bypass_account_linking",
+                bool(self._vars["bypass_account_linking"].get()),
+            ),
+        ).grid(column=1, row=irow, sticky="w")
+        ttk.Label(
+            advanced_center, text=_("gui", "settings", "advanced", "auto_restart_on_error")
+        ).grid(column=0, row=(irow := irow + 1), sticky="e")
+        ttk.Checkbutton(
+            advanced_center,
+            variable=self._vars["auto_restart_on_error"],
+            command=lambda: setattr(
+                self._settings,
+                "auto_restart_on_error",
+                bool(self._vars["auto_restart_on_error"].get()),
+            ),
+        ).grid(column=1, row=irow, sticky="w")
+        ttk.Label(
+            advanced_center, text=_("gui", "settings", "advanced", "ignore_badge_emote")
+        ).grid(column=0, row=(irow := irow + 1), sticky="e")
+        ttk.Checkbutton(
+            advanced_center,
+            variable=self._vars["ignore_badge_emote"],
+            command=lambda: setattr(
+                self._settings,
+                "ignore_badge_emote",
+                bool(self._vars["ignore_badge_emote"].get()),
             ),
         ).grid(column=1, row=irow, sticky="w")
 
@@ -2684,8 +2766,12 @@ if __name__ == "__main__":
                 autostart_tray=False,
                 exclude={"Lit Game"},
                 tray_notifications=True,
+                auto_claim=True,
                 enable_badges_emotes=False,
                 available_drops_check=False,
+                bypass_account_linking=False,
+                auto_restart_on_error=False,
+                ignore_badge_emote=False,
                 logging_level=LOGGING_LEVELS[0],
                 priority_mode=PriorityMode.PRIORITY_ONLY,
             )

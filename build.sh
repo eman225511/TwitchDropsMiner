@@ -3,7 +3,7 @@
 dirpath=$(dirname "$(readlink -f "$0")")
 
 # Check if the virtual environment exists
-if [ ! -d "$dirpath/env" ]; then
+if [ ! -d "$dirpath/.venv" ]; then
     echo
     echo "No virtual environment found! Run setup_env.sh to set it up first."
     echo
@@ -12,10 +12,10 @@ if [ ! -d "$dirpath/env" ]; then
 fi
 
 # Check if PyInstaller is installed in the virtual environment
-if [ ! -f "$dirpath/env/bin/pyinstaller" ]; then
+if [ ! -f "$dirpath/.venv/bin/pyinstaller" ]; then
     echo
     echo "Installing PyInstaller..."
-    "$dirpath/env/bin/pip" install pyinstaller
+    "$dirpath/.venv/bin/pip" install pyinstaller
     if [ $? -ne 0 ]; then
         echo
         echo "Failed to install PyInstaller."
@@ -28,7 +28,7 @@ fi
 # Run PyInstaller with the specified build spec file
 echo
 echo "Building..."
-"$dirpath/env/bin/pyinstaller" "$dirpath/build.spec"
+"$dirpath/.venv/bin/pyinstaller" "$dirpath/build.spec"
 if [ $? -ne 0 ]; then
     echo
     echo "PyInstaller build failed."
