@@ -68,8 +68,8 @@ REM Read current version and append SHA
 for /f "tokens=*" %%i in ('python -c "from version import __version__; print(__version__)"') do set VERSION=%%i
 set NEW_VERSION=%VERSION%.%SHA_SHORT%
 
-REM Update version.py
-powershell -Command "(Get-Content version.py) -Replace '^__version__\s*=\s*\"[^\"]+', \"`$0.%SHA_SHORT%\" | Out-File version.py"
+REM Update version.py using Python to avoid encoding issues
+python -c "import re; content = open('version.py', 'r', encoding='utf-8').read(); content = re.sub(r'^__version__\s*=\s*\"([^\"]+)\"', r'__version__ = \"\1.%SHA_SHORT%\"', content, flags=re.MULTILINE); open('version.py', 'w', encoding='utf-8').write(content)"
 
 echo Updated version to: %NEW_VERSION%
 echo.
