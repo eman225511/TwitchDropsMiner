@@ -100,9 +100,20 @@ class BaseDrop:
         return f"Drop({self.rewards_text()}{additional})"
 
     @property
+    def is_completed(self) -> bool:
+        """
+        Check if drop is completed (either claimed or ready to claim with bypass enabled).
+        This is used to determine if we should move on to the next drop.
+        """
+        return (
+            self.is_claimed
+            or (self._twitch.settings.bypass_account_linking and self.claim_id is not None)
+        )
+
+    @property
     def preconditions_met(self) -> bool:
         campaign = self.campaign
-        return all(campaign.timed_drops[pid].is_claimed for pid in self.precondition_drops)
+        return all(campaign.timed_drops[pid].is_completed for pid in self.precondition_drops)
 
     @property
     def is_badge_or_emote_only(self) -> bool:
@@ -298,10 +309,10 @@ class TimedDrop(BaseDrop):
         return (
             super()._base_earn_conditions()
             and self.required_minutes > 0
-            # When bypass account linking is enabled, consider drops at 100% as done
+            # When bypass account linking is enabled, consider drops ready to claim as done
             and not (
                 self._twitch.settings.bypass_account_linking
-                and self.current_minutes >= self.required_minutes
+                and self.claim_id is not None
             )
             # NOTE: This may be a bad idea, as it invalidates the can_earn status
             # and provides no way to recover from this state until the next reload.
@@ -425,15 +436,15 @@ class DropsCampaign:
 
     @property
     def finished(self) -> bool:
-        return all(d.is_claimed or d.required_minutes <= 0 for d in self.drops)
+        return all(d.is_completed or d.required_minutes <= 0 for d in self.drops)
 
     @property
     def claimed_drops(self) -> int:
-        return sum(d.is_claimed for d in self.drops)
+        return sum(d.is_completed for d in self.drops)
 
     @property
     def remaining_drops(self) -> int:
-        return sum(not d.is_claimed for d in self.drops)
+        return sum(not d.is_completed for d in self.drops)
 
     @property
     def required_minutes(self) -> int:
@@ -492,7 +503,7 @@ class DropsCampaign:
     def preconditions_chain(self) -> set[str]:
         return set(
             chain.from_iterable(
-                drop.precondition_drops for drop in self.drops if not drop.is_claimed
+                drop.precondition_drops for drop in self.drops if not drop.is_completed
             )
         )
 
