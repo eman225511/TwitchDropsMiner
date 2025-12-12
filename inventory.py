@@ -298,6 +298,11 @@ class TimedDrop(BaseDrop):
         return (
             super()._base_earn_conditions()
             and self.required_minutes > 0
+            # When bypass account linking is enabled, consider drops at 100% as done
+            and not (
+                self._twitch.settings.bypass_account_linking
+                and self.current_minutes >= self.required_minutes
+            )
             # NOTE: This may be a bad idea, as it invalidates the can_earn status
             # and provides no way to recover from this state until the next reload.
             and self.extra_current_minutes < MAX_EXTRA_MINUTES
