@@ -888,13 +888,17 @@ class SettingsPanel:
 
 
 class LoginForm:
-    def __init__(self, manager: "GUIManager", status_label: QLabel, user_label: QLabel, login: QLineEdit, password: QLineEdit, token: QLineEdit, confirm_button: QPushButton, logout_button: QPushButton) -> None:
+    def __init__(
+        self,
+        manager: "GUIManager",
+        status_label: QLabel,
+        user_label: QLabel,
+        confirm_button: QPushButton,
+        logout_button: QPushButton,
+    ) -> None:
         self._manager = manager
         self._status_label = status_label
         self._user_label = user_label
-        self._login = login
-        self._password = password
-        self._token = token
         self._confirm = confirm_button
         self._logout = logout_button
         self._confirm.setEnabled(False)
@@ -917,14 +921,9 @@ class LoginForm:
         self._manager.print("Logged out. Restarting application...")
         raise ReloadRequest()
 
-    def clear(self, login: bool = False, password: bool = False, token: bool = False) -> None:
-        clear_all = not login and not password and not token
-        if login or clear_all:
-            self._login.clear()
-        if password or clear_all:
-            self._password.clear()
-        if token or clear_all:
-            self._token.clear()
+    def clear(self, *args: Any, **kwargs: Any) -> None:
+        # Credential-based login fields no longer exist in the Qt UI.
+        return
 
     async def _wait_for_confirm(self) -> None:
         self._confirm_future = asyncio.get_running_loop().create_future()
@@ -936,27 +935,9 @@ class LoginForm:
             self._confirm_future = None
 
     async def ask_login(self) -> LoginData:
-        self.update(_("gui", "login", "required"), None)
-        self._manager.grab_attention(sound=False)
-        while True:
-            self._manager.print(_("gui", "login", "request"))
-            await self._wait_for_confirm()
-            login_data = LoginData(
-                self._login.text().strip(),
-                self._password.text(),
-                self._token.text().strip(),
-            )
-            # basic validation
-            if (not 3 <= len(login_data.username) <= 25) or not re.match(r"^[a-zA-Z0-9_]+$", login_data.username):
-                self.clear(login=True)
-                continue
-            if len(login_data.password) < 8:
-                self.clear(password=True)
-                continue
-            if login_data.token and len(login_data.token) < 6:
-                self.clear(token=True)
-                continue
-            return login_data
+        # Legacy API (used by the old username/password flow). The Qt UI uses
+        # device-code OAuth via ask_enter_code().
+        raise RuntimeError("Credential login is not supported in the Qt UI")
 
     async def ask_enter_code(self, page_url, user_code: str) -> None:
         self.update(_("gui", "login", "required"), None)
@@ -1080,26 +1061,19 @@ class GUIManager:
         login_layout.addWidget(login_status, 0, 1)
         login_layout.addWidget(login_user, 0, 2)
 
-        le_user = QLineEdit()
-        le_user.setPlaceholderText(_("gui", "login", "username"))
-        le_pass = QLineEdit()
-        le_pass.setPlaceholderText(_("gui", "login", "password"))
-        le_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        le_token = QLineEdit()
-        le_token.setPlaceholderText(_("gui", "login", "twofa_code"))
+        login_hint = QLabel("Click Login to link your Twitch account using device activation.")
+        login_hint.setWordWrap(True)
 
         btn_confirm = QPushButton(_("gui", "login", "button"))
         btn_confirm.setToolTip("Submit the login details above.")
         btn_logout = QPushButton(_("gui", "login", "logout_button") if _("gui", "login", "logout_button") else "Logout")
         btn_logout.setToolTip("Log out and restart the miner.")
 
-        login_layout.addWidget(le_user, 1, 0, 1, 3)
-        login_layout.addWidget(le_pass, 2, 0, 1, 3)
-        login_layout.addWidget(le_token, 3, 0, 1, 3)
-        login_layout.addWidget(btn_confirm, 4, 0, 1, 3)
-        login_layout.addWidget(btn_logout, 5, 0, 1, 3)
+        login_layout.addWidget(login_hint, 1, 0, 1, 3)
+        login_layout.addWidget(btn_confirm, 2, 0, 1, 3)
+        login_layout.addWidget(btn_logout, 3, 0, 1, 3)
 
-        self.login = LoginForm(self, login_status, login_user, le_user, le_pass, le_token, btn_confirm, btn_logout)
+        self.login = LoginForm(self, login_status, login_user, btn_confirm, btn_logout)
 
         # Progress
         progress_box = QGroupBox(_("gui", "progress", "name"))
