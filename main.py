@@ -17,9 +17,8 @@ if __name__ == "__main__":
     import tempfile
     import traceback
     import subprocess
-    import tkinter as tk
+    from PySide6.QtWidgets import QApplication, QMessageBox
     from pathlib import Path
-    from tkinter import messagebox
     from typing import NoReturn, TYPE_CHECKING
 
     import truststore
@@ -30,7 +29,7 @@ if __name__ == "__main__":
     from settings import Settings
     from version import __version__
     from exceptions import CaptchaRequired
-    from utils import lock_file, resource_path, set_root_icon
+    from utils import lock_file
     from constants import LOGGING_LEVELS, SELF_PATH, FILE_FORMATTER, LOG_PATH, LOCK_PATH
 
     if TYPE_CHECKING:
@@ -57,7 +56,11 @@ if __name__ == "__main__":
             try:
                 super().exit(status, message)  # sys.exit(2)
             finally:
-                messagebox.showerror("Argument Parser Error", self._message.getvalue())
+                _show_message(
+                    "Argument Parser Error" if status else "Twitch Drops Miner",
+                    self._message.getvalue(),
+                    error=bool(status),
+                )
 
     class ParsedArgs(argparse.Namespace):
         _verbose: int
@@ -93,14 +96,23 @@ if __name__ == "__main__":
                 return logging.INFO
             return logging.NOTSET
 
+    def _ensure_qapp() -> QApplication:
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+        app.setQuitOnLastWindowClosed(False)
+        return app
+
+    def _show_message(title: str, text: str, *, error: bool) -> None:
+        _ensure_qapp()
+        if error:
+            QMessageBox.critical(None, title, text)
+        else:
+            QMessageBox.information(None, title, text)
+
     # handle input parameters
     # NOTE: parser output is shown via message box
-    # we also need a dummy invisible window for the parser
-    root = tk.Tk()
-    root.overrideredirect(True)
-    root.withdraw()
-    set_root_icon(root, resource_path("icons/pickaxe.ico"))
-    root.update()
+    _ensure_qapp()
     parser = Parser(
         SELF_PATH.name,
         description="A program that allows you to mine timed drops on Twitch.",
@@ -122,15 +134,14 @@ if __name__ == "__main__":
     try:
         settings = Settings(args)
     except Exception:
-        messagebox.showerror(
+        _show_message(
             "Settings error",
-            f"There was an error while loading the settings file:\n\n{traceback.format_exc()}"
+            f"There was an error while loading the settings file:\n\n{traceback.format_exc()}",
+            error=True,
         )
         sys.exit(4)
-    # dummy window isn't needed anymore
-    root.destroy()
     # get rid of unneeded objects
-    del root, parser
+    del parser
 
     def find_venv_python() -> str | None:
         """Find Python executable in common venv locations"""

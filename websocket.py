@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from collections import abc
 
     from twitch import Twitch
-    from gui import WebsocketStatus
+    from gui_qt import WebsocketStatus
     from constants import JsonType, WebsocketTopic
 
 

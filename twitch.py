@@ -16,7 +16,7 @@ import aiohttp
 from yarl import URL
 
 from translate import _
-from gui import GUIManager
+from gui_qt import GUIManager
 from channel import Channel
 from websocket import WebsocketPool
 from inventory import DropsCampaign
@@ -56,7 +56,7 @@ from constants import (
 
 if TYPE_CHECKING:
     from utils import Game
-    from gui import LoginForm
+    from gui_qt import LoginForm
     from channel import Stream
     from settings import Settings
     from inventory import TimedDrop
